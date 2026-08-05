@@ -2451,3 +2451,18 @@ a clean result, not a suspicious one.
 `claude/meta-physical-14ykzn` came out of this entry — the audit's own
 non-destructive scoping decision means a fix would only ever have landed on
 today's HEAD, and today's HEAD was never the thing that was red.
+
+**Addendum, same day: the two findings above were written directly into this
+entry, which is not the seam the operator meant.** Re-run as a live
+`nestor serve` session with this session as the MCP client — `nestor_check`
+first, to make the point plainly: `tests-passed@HEAD` has **no sealed
+baseline** (`"baseline": null`), because nobody has ever sealed what HEAD's
+count should be, so Nestor correctly refuses to say 552 is "in tolerance" of
+anything. Then both findings went through `nestor_propose`, the one write
+this server gives a model, landing as `draft` in the review queue rather than
+asserted here as settled fact: document `3668d54d…`/segment `18bd6d52…` for
+`ccbbc81`, document `11c6cc32…`/segment `87a50ba8…` for `295178f`. `nestor_
+ledger_verify` confirms 3 entries, chain intact. The prose above is unchanged
+and was already checked against the actual logs before it was written; what
+changed is that the record of it now also exists inside Nestor's own queue,
+addressable to a human, instead of only in this file.
