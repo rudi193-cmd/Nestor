@@ -2349,3 +2349,50 @@ and the frozenset is pinned so growing it is a decision rather than a drift.
 different module: it puts a translation system in the position of translating
 its own refusals, unverified, which wants its own entry rather than smuggling
 into this one.
+
+### 6.25 `nestor_ledger_verify`'s own `memory` block can't see the write `nestor_propose` just made — **verified**
+
+*Found 2026-08-05 running `nestor serve` live against a scratch store and
+speaking MCP to it as the client — `initialize`, `tools/list`,
+`tools/call` — rather than reading `serve.py` and assuming.*
+
+**What happened.** Two `nestor_propose` calls over stdio, each answered with
+`"state": "draft"`. Then `nestor_ledger_verify` — the one self-check tool a
+model has — came back `"memory": {"total": 0, "sealed": 0, "draft": 0,
+"lang_pairs": []}`. Read cold, that says the two proposals left no trace.
+
+**They did land — the ledger itself has both.** Reading `ledger.jsonl`
+directly showed four entries: a `passage` for each `nestor_ask` and a
+`proposal` for each `nestor_propose`, both `proposal` entries stamped
+`"origin": "mcp:claude-in-nestor-session"` — the client name given at
+`initialize`. `ledger_verify`'s own `"intact"`/`"detail"` fields (`"intact —
+4 entries"`) were right the whole time; only the `memory` sub-object read as
+if the queue were empty.
+
+**Root cause, checked against `answer.propose` and `memory.stats` rather than
+guessed:** `nestor_propose` writes through `store.create_document` /
+`create_segment` — the curator's review queue (`document_id`, `segment_id`).
+`nestor_ledger_verify`'s `memory` field is `memory.stats(store=store)` →
+`store.memory_stats()`, which counts rows in the **pairs** table (`sealed` /
+`draft` translation memory entries) and has no query over documents or
+segments at all. Two different tables share the word "draft" — a pair
+proposed straight into memory (`memory.add_pair(status="draft")`) and a
+candidate queued via the review queue — and only one of them is what
+`nestor_ledger_verify` reports.
+
+**Why it is worth an entry rather than a shrug.** The architecture itself is
+documented — README §"The recipes" and `QUESTIONS.md` both say a tier-2 draft
+goes into the `documents`/`segments` review queue, not the pairs table. What
+is not documented anywhere is that the *one* tool `serve.py` gives a model to
+check its own recent write — `nestor_ledger_verify`, described to the model
+as reporting "the memory's counts" — is blind to exactly that write. A model
+that proposes, then sanity-checks itself the only way this server lets it,
+sees zero evidence its proposal existed, and the ledger's raw entry count is
+the only field in the same response that would have told it otherwise.
+
+**Not fixed.** No code changed for this entry — it is the observation, made
+by running the server rather than reading it. The fix, if this is worth one,
+is probably `nestor_ledger_verify` folding a review-queue count (`store
+.count_segments(status="draft")` or equivalent) into its `memory` block, or
+its tool description saying plainly that `memory` means sealed/draft pairs
+and not the review queue. Undecided which; both are small.
