@@ -2396,3 +2396,58 @@ is probably `nestor_ledger_verify` folding a review-queue count (`store
 .count_segments(status="draft")` or equivalent) into its `memory` block, or
 its tool description saying plainly that `memory` means sealed/draft pairs
 and not the review queue. Undecided which; both are small.
+
+### 6.26 The full history, replayed: 151 commits, `pytest -q` at each — **verified**
+
+*Run 2026-08-05 at the operator's request to "feed every part of this build
+from the first push on head, up until the most recent," fixing what breaks
+and resuming. Scoped first: non-destructive (a read-only walk, any fix lands
+on today's HEAD, no rewrite, no force-push), `pytest -q` as the sole gate,
+all 151 commits from the repo's actual first commit.*
+
+**Method.** A second git worktree, detached, walked oldest → newest from
+`7fb841e` (extraction) to `d66a73e` (HEAD at the time), `git checkout --force`
+per commit, `python -m pytest -q` in an isolated venv with `.[dev,keys]`
+installed — matching CI's baseline, not this session's ambient Python, which
+had a broken system `cryptography`/`_cffi_backend` and produced 9 phantom
+failures on a first pass at HEAD that had nothing to do with any commit. The
+main checkout never moved; nothing here touches history. 151 commits, ~46
+minutes wall clock, one JSON line per commit logged to a scratch report.
+
+**Result: 149 green in isolation, 2 red, both already healed by the very next
+commit in the walk, neither ever reaching HEAD broken.**
+
+* **`ccbbc81` "raise on a conflicting seal, stay silent on a same-verifier
+  correction"** (commit 31/151) — 6 failures, all in `test_seal_replacement.py`.
+  The commit made a second seal from a different verifier raise
+  `ConflictingSealError`; the test file's own calls, written for the older
+  silent-overwrite behaviour, weren't updated in the same commit. Fixed one
+  commit later by `9738d76`, which is the commit that actually updated the
+  tests — `ccbbc81` was mid-series, not shipped.
+* **`295178f` "optional score seam, semantic matcher, and hermetic tests"**
+  (commit 80/151) — 1 failure:
+  `test_an_unwritable_ledger_does_not_lose_the_seal`. That version of the test
+  simulated an unwritable ledger with `ledger.chmod(0o444)` and asserted a
+  `RuntimeWarning` followed. Reproduced deterministically, twice, at that
+  commit alone: `chmod(0o444)` does not stop a write in this audit's
+  container, because the test suite runs as root and root ignores permission
+  bits on its own files. Not a logic bug in `nestor` — a test whose fault
+  injection assumed a non-root runner. Fixed one commit later by `38903f7dc9`
+  ("address PR review — lint, ledger fault injection, semantic retype"),
+  which replaced the `chmod` with `monkeypatch.setattr(memory, "_log_rejection",
+  boom)` — a deterministic fault that doesn't care who owns the process. Confirmed
+  the fix holds: that same test passes at HEAD in the same root container.
+
+**What this does and doesn't say.** It says HEAD is not carrying a regression
+introduced somewhere in these 151 commits and quietly never re-tested — every
+point in the line was checked, not just the ones with a green CI badge on
+their PR. It does not say every one of these 151 commits was individually
+released or reviewed in isolation; ordinary mid-PR breakage (§first entry
+above) is expected and is not evidence of anything wrong with the project's
+process. Two commits red, both healed within one commit, zero still open — is
+a clean result, not a suspicious one.
+
+**Not fixed, because nothing here was still broken.** No commit on
+`claude/meta-physical-14ykzn` came out of this entry — the audit's own
+non-destructive scoping decision means a fix would only ever have landed on
+today's HEAD, and today's HEAD was never the thing that was red.
